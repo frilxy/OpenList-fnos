@@ -3,7 +3,7 @@
     "openlist-fnos.main": {
       "title": "OpenList",
       "icon": "images/icon_{0}.png",
-      "type": "url",
+      "type": "iframe",
       "protocol": "http",
       "port": "5244",
       "url": "/",

@@ -4,16 +4,31 @@ on:
   schedule:
     - cron: '23 19 * * *'
   workflow_dispatch:
+  pull_request:
+    branches: [main]
 
 permissions: {}
 
 concurrency:
-  group: openlist-fnos-sync
+  group: openlist-fnos-${{ github.event.pull_request.number || 'sync' }}
   cancel-in-progress: false
 
 jobs:
+  automation-boundary:
+    name: Verify fnOS automation boundary
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - run: bash packaging/fnos/check-automation.sh
+
   mirror:
     name: Sync upstream main
+    needs: automation-boundary
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -24,10 +39,12 @@ jobs:
       - name: Fast-forward the upstream mirror
         run: |
           git fetch --no-tags https://github.com/OpenListTeam/OpenList.git refs/heads/main
-          git push origin FETCH_HEAD:refs/heads/upstream-main
+          git push --no-follow-tags origin FETCH_HEAD:refs/heads/upstream-main
 
   package:
     name: Build fnOS packages for the latest stable release
+    needs: automation-boundary
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -45,11 +62,14 @@ jobs:
         run: |
           gh api repos/OpenListTeam/OpenList/releases/latest > "$RUNNER_TEMP/openlist-release.json"
           tag=$(jq -er 'select(.draft == false and .prerelease == false) | .tag_name | select(test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))' "$RUNNER_TEMP/openlist-release.json")
-          name="OpenList-$tag-fnOS"
+          revision=$(<packaging/fnos/revision)
+          [[ $revision =~ ^[1-9][0-9]*$ ]]
+          version="$tag-$revision"
+          name="OpenList-$version-fnOS"
           printf 'name=%s\n' "$name" >> "$GITHUB_OUTPUT"
           if [[ $EVENT_NAME == schedule ]] &&
             [[ $(gh api --method GET "repos/$GITHUB_REPOSITORY/actions/artifacts" -f name="$name" --jq 'any(.artifacts[]; .expired == false)') == true ]]; then
-            printf 'An artifact for %s is already available.\n' "$tag" >> "$GITHUB_STEP_SUMMARY"
+            printf 'An artifact for %s is already available.\n' "$version" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           printf 'build=true\n' >> "$GITHUB_OUTPUT"

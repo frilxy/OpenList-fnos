@@ -27,7 +27,12 @@ if [[ ! $tag =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     printf 'Unexpected OpenList release tag: %s\n' "$tag" >&2
     exit 1
 fi
-version=${tag#v}
+revision=$(<"$source_dir/revision")
+if [[ ! $revision =~ ^[1-9][0-9]*$ ]]; then
+    printf 'Invalid fnOS package revision: %s\n' "$revision" >&2
+    exit 1
+fi
+version=${tag#v}-$revision
 digest=$(jq -er --arg asset "$asset" '.assets[] | select(.name == $asset) | .digest // empty' "$release_json")
 if [[ ! $digest =~ ^sha256:[0-9a-f]{64}$ ]]; then
     printf 'Invalid SHA-256 digest for %s in %s\n' "$asset" "$tag" >&2
