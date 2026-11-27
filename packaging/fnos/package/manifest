@@ -1,0 +1,16 @@
+appname=openlist-fnos
+display_name=OpenList
+desc=聚合本地存储和网盘的文件列表，提供 WebDAV。由 frilxy 打包为飞牛第三方应用。
+source=thirdparty
+maintainer=OpenList Team
+maintainer_url=https://oplist.org
+distributor=frilxy
+distributor_url=https://github.com/frilxy/OpenList-fnos/tree/main/packaging/fnos
+os_min_version=1.2.0
+ctl_stop=true
+service_port=5244
+checkport=true
+desktop_uidir=ui
+desktop_applaunchname=openlist-fnos.main
+disable_authorization_path=false
+changelog=包含上游 OpenList 正式版及飞牛应用中心桌面入口。

@@ -1,0 +1,5 @@
+{
+  "defaults": {"run-as": "package"},
+  "username": "openlist_fnos",
+  "groupname": "openlist_fnos"
+}

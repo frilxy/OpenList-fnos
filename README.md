@@ -14,6 +14,8 @@
 
 ---
 
+[飞牛 fnOS 安装与构建](./packaging/fnos/README.md) · [每日同步和 FPK 构建产物](https://github.com/frilxy/OpenList-fnos/actions/workflows/fnos-sync.yml)
+
 - English | [中文](./README/README_cn.md) | [日本語](./README/README_ja.md) | [Dutch](./README/README_nl.md) | [한국어](./README/README_ko.md) | [Deutsch](./README/README_de.md) | [Русский](./README/README_ru.md) | [Français](./README/README_fr.md) | [Español](./README/README_es.md) | [العربية](./README/README_ar.md)
 
 - [Contributing](./CONTRIBUTING.md)
