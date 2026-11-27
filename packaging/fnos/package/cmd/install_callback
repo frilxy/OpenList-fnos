@@ -1,0 +1,23 @@
+#!/bin/bash
+set -eu
+umask 077
+
+fail() {
+    printf '%s\n' "$1" > "${TRIM_TEMP_LOGFILE:-/dev/stderr}"
+    exit 1
+}
+
+password=${wizard_admin_password:-}
+unset wizard_admin_password
+if (( ${#password} < 12 )); then
+    fail '请设置至少 12 个字符的 OpenList 管理员密码。'
+fi
+
+cd "${TRIM_PKGVAR:?}" || fail '无法访问 OpenList 数据目录。'
+# The upstream CLI initializes a missing admin and leaves an existing admin unchanged.
+# Capture its output because it prints the initial password to stdout.
+if ! output=$(OPENLIST_ADMIN_PASSWORD="$password" "${TRIM_APPDEST:?}/openlist" \
+    --data "$TRIM_PKGVAR" --config "${TRIM_PKGETC:?}/config.json" admin 2>&1) ||
+    [[ $output != *"Admin user's username:"* ]]; then
+    fail '初始化 OpenList 管理员失败。请检查应用的数据和配置目录。'
+fi

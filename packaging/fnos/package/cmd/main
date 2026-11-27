@@ -1,0 +1,90 @@
+#!/bin/bash
+set -eu
+umask 077
+
+binary=${TRIM_APPDEST:?}/openlist
+state_dir=${TRIM_PKGTMP:?}
+pidfile=$state_dir/openlist.pid
+port=${TRIM_SERVICE_PORT:?}
+
+fail() {
+    printf '%s\n' "$1" > "${TRIM_TEMP_LOGFILE:-/dev/stderr}"
+    exit 1
+}
+
+is_running() {
+    [[ $pid =~ ^[1-9][0-9]*$ ]] && [[ /proc/$pid/exe -ef $binary ]]
+}
+
+is_listening() {
+    local listeners
+    listeners=$(ss -H -ltnp "sport = :$port") || return 1
+    [[ $listeners == *"pid=$pid,"* ]]
+}
+
+stop_process() {
+    if is_running; then
+        kill -TERM "$pid" 2>/dev/null || ! is_running || return 1
+        for (( attempt=0; attempt<40; attempt++ )); do
+            is_running || break
+            sleep 0.25
+        done
+        if is_running; then
+            kill -KILL "$pid" 2>/dev/null || ! is_running || return 1
+            for (( attempt=0; attempt<8; attempt++ )); do
+                is_running || break
+                sleep 0.25
+            done
+        fi
+        ! is_running || return 1
+    fi
+    rm -f -- "$pidfile"
+}
+
+exec 9>"$state_dir/openlist.lock"
+flock -x 9 || fail '无法获取 OpenList 运行锁。'
+pid=
+if [[ -r $pidfile ]]; then
+    read -r pid < "$pidfile" || pid=
+fi
+
+case ${1:-} in
+    start)
+        if is_running; then
+            is_listening || fail "OpenList 进程未监听端口 $port。"
+            exit 0
+        fi
+        if [[ -n $(ss -H -ltn "sport = :$port") ]]; then
+            fail "OpenList 端口 $port 已被占用。"
+        fi
+        cd "${TRIM_PKGVAR:?}" || fail '无法访问 OpenList 数据目录。'
+        unset wizard_admin_password OPENLIST_ADMIN_PASSWORD
+        OPENLIST_HTTP_PORT="$port" OPENLIST_TEMP_DIR="$state_dir/temp" \
+            nohup "$binary" --data "$TRIM_PKGVAR" \
+                --config "${TRIM_PKGETC:?}/config.json" server \
+                </dev/null >> "$TRIM_PKGVAR/console.log" 2>&1 9>&- &
+        pid=$!
+        printf '%s\n' "$pid" > "$pidfile"
+        for (( attempt=0; attempt<120; attempt++ )); do
+            if is_running && is_listening; then
+                exit 0
+            fi
+            kill -0 "$pid" 2>/dev/null || break
+            sleep 0.25
+        done
+        stop_process || fail 'OpenList 启动失败，且无法停止进程。'
+        fail "OpenList 未能监听端口 $port，请查看应用数据目录中的 console.log。"
+        ;;
+    stop)
+        stop_process || fail '无法停止 OpenList。'
+        ;;
+    status)
+        if is_running && is_listening; then
+            exit 0
+        fi
+        exit 3
+        ;;
+    *)
+        exit 1
+        ;;
+esac
