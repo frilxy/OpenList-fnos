@@ -13,4 +13,4 @@ checkport=true
 desktop_uidir=ui
 desktop_applaunchname=openlist-fnos.main
 disable_authorization_path=false
-changelog=包含上游 OpenList 正式版及飞牛应用中心桌面入口。
+changelog=点击 OpenList 图标可在飞牛桌面窗口内打开。
