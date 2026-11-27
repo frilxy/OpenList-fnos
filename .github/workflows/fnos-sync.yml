@@ -1,0 +1,84 @@
+name: Sync OpenList and build fnOS FPK
+
+on:
+  schedule:
+    - cron: '23 19 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: openlist-fnos-sync
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    name: Sync upstream main
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - name: Fast-forward the upstream mirror
+        run: |
+          git fetch --no-tags https://github.com/OpenListTeam/OpenList.git refs/heads/main
+          git push origin FETCH_HEAD:refs/heads/upstream-main
+
+  package:
+    name: Build fnOS packages for the latest stable release
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Check upstream release and existing artifacts
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          gh api repos/OpenListTeam/OpenList/releases/latest > "$RUNNER_TEMP/openlist-release.json"
+          tag=$(jq -er 'select(.draft == false and .prerelease == false) | .tag_name | select(test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))' "$RUNNER_TEMP/openlist-release.json")
+          name="OpenList-$tag-fnOS"
+          printf 'name=%s\n' "$name" >> "$GITHUB_OUTPUT"
+          if [[ $EVENT_NAME == schedule ]] &&
+            [[ $(gh api --method GET "repos/$GITHUB_REPOSITORY/actions/artifacts" -f name="$name" --jq 'any(.artifacts[]; .expired == false)') == true ]]; then
+            printf 'An artifact for %s is already available.\n' "$tag" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          printf 'build=true\n' >> "$GITHUB_OUTPUT"
+
+      - name: Install fnpack
+        if: steps.release.outputs.build == 'true'
+        run: |
+          fnpack="$RUNNER_TEMP/fnpack"
+          curl --fail --silent --show-error --location --retry 3 --max-time 60 \
+            https://static2.fnnas.com/fnpack/fnpack-1.3.3-linux-amd64 --output "$fnpack"
+          echo "1464d6aa9b995ebecb263c5ec60f0f4a7cbf45e0ce887836755fd65abd647d1e  $fnpack" | sha256sum --check
+          chmod +x "$fnpack"
+          printf 'FNPACK=%s\n' "$fnpack" >> "$GITHUB_ENV"
+
+      - name: Build and checksum both packages
+        if: steps.release.outputs.build == 'true'
+        run: |
+          packaging/fnos/build.sh amd64 dist/fnos "$RUNNER_TEMP/openlist-release.json"
+          packaging/fnos/build.sh arm64 dist/fnos "$RUNNER_TEMP/openlist-release.json"
+          cd dist/fnos
+          for package in *.fpk; do tar -tzf "$package" >/dev/null; done
+          sha256sum -- *.fpk > SHA256SUMS.txt
+
+      - name: Upload fnOS test packages
+        if: steps.release.outputs.build == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: ${{ steps.release.outputs.name }}
+          path: dist/fnos/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 90
